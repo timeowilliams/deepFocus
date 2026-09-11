@@ -10,12 +10,7 @@ export interface User {
 export interface QueuedActivityData {
   id: string
   username: string
-  dailyData: Array<{
-    url: string
-    title: string
-    timeSpent: number
-    date: string
-  }>
+  dailyData: ActivitySyncData[]
   timestamp: number
   retryCount: number
   lastRetryAttempt?: number
@@ -72,13 +67,29 @@ export type DeepWorkHours = {
 }
 
 export interface DeepWorkHoursWithDates {
-  Monday?: { hours: number; date: string }
-  Tuesday?: { hours: number; date: string }
-  Wednesday?: { hours: number; date: string }
-  Thursday?: { hours: number; date: string }
-  Friday?: { hours: number; date: string }
-  Saturday?: { hours: number; date: string }
-  Sunday?: { hours: number; date: string }
+  Monday?: DeepWorkDay
+  Tuesday?: DeepWorkDay
+  Wednesday?: DeepWorkDay
+  Thursday?: DeepWorkDay
+  Friday?: DeepWorkDay
+  Saturday?: DeepWorkDay
+  Sunday?: DeepWorkDay
+}
+
+export interface ActivitySyncData {
+  url: string
+  title: string
+  timeSpent: number
+  date: string
+  isDeepWork?: boolean
+  source?: 'automatic' | 'manual'
+}
+
+export interface DeepWorkDay {
+  hours: number
+  date: string
+  automaticHours?: number
+  manualHours?: number
 }
 export interface ElectronAPI {
   sendUserData: (user: {

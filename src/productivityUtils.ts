@@ -16,6 +16,7 @@ import path, { format } from 'path'
 import { app } from 'electron'
 import fs from 'fs'
 import { platform, tmpdir } from 'os'
+import { addTrackedSeconds } from './activityTime'
 
 const CLIPBOARD_URL_FALLBACK_CACHE_MS = 10 * 1000
 const CLIPBOARD_URL_FALLBACK_THROTTLE_MS = 30 * 1000
@@ -142,10 +143,10 @@ function getBase64Icon(iconPath: string): string {
 export function updateSiteTimeTracker(
   appName: string,
   timeTrackers: SiteTimeTracker[],
-  url?: string
+  url?: string,
+  elapsedSeconds = 0,
+  sampledAtMs = Date.now()
 ): SiteTimeTracker {
-  const currentTime = Number((Date.now() / 1000).toString().slice(0, -3))
-
   let trackerKey = ''
   let trackerTitle = ''
   let trackerType: TrackerType
@@ -178,15 +179,15 @@ export function updateSiteTimeTracker(
   let tracker = timeTrackers.find((t) => t.url === trackerKey)
   if (tracker) {
     log.info('Updating existing tracker', tracker.title, tracker.timeSpent)
-    tracker.timeSpent += 5
-    tracker.lastActiveTimestamp = currentTime
+    tracker.timeSpent = addTrackedSeconds(tracker.timeSpent, elapsedSeconds)
+    tracker.lastActiveTimestamp = sampledAtMs
     tracker.iconUrl = iconUrl
   } else {
     tracker = {
       url: trackerKey,
       title: trackerTitle,
-      timeSpent: 0,
-      lastActiveTimestamp: currentTime,
+      timeSpent: addTrackedSeconds(0, elapsedSeconds),
+      lastActiveTimestamp: sampledAtMs,
       type: trackerType,
       iconUrl
     }
@@ -756,7 +757,9 @@ export function getBrowserURL(browser: string): Promise<string> {
           })
       } else if (browser.toLowerCase() === 'firefox') {
         getURLFromWindowsAccessibility(browser)
-          .then((url) => (url ? resolve(url) : getURLFromWindowsClipboardFallback(browser).then(resolve)))
+          .then((url) =>
+            url ? resolve(url) : getURLFromWindowsClipboardFallback(browser).then(resolve)
+          )
           .catch((error) => {
             log.debug(`Error getting URL for Firefox on Windows: ${error.message}`)
             resolve('')
@@ -798,7 +801,7 @@ export function calculateDeepWorkHours(
 
   // Filter and sum the time spent on deep work apps/sites
   siteTrackers.forEach((tracker) => {
-    if (tracker.title.includes('https://') || tracker.title.includes('http://')) {
+    if (tracker.type === TrackerType.Website) {
       if (isDeepWork({ type: 'URL', value: tracker.url }, store)) {
         totalDeepWorkTime += tracker.timeSpent
       }
@@ -808,15 +811,15 @@ export function calculateDeepWorkHours(
       }
     }
   })
-  
+
   // Add manual time entries for today
   const manualTimeEntries = store.get('manualTimeEntries', []) as ManualTimeEntry[]
   const todayDate = dayjs().format('YYYY-MM-DD')
   const todayManualHours = manualTimeEntries
     .filter((entry) => entry.date === todayDate)
     .reduce((sum, entry) => sum + entry.hours, 0)
-  
-  const timeSpentInHours = Number((totalDeepWorkTime / (60 * 60)).toFixed(2)) // Convert from sec to hours
+
+  const timeSpentInHours = totalDeepWorkTime / (60 * 60)
   const totalHours = Number((timeSpentInHours + todayManualHours).toFixed(2))
   deepWorkHours[today as keyof DeepWorkHours] = totalHours
 
@@ -824,7 +827,9 @@ export function calculateDeepWorkHours(
   const deepWorkHoursWithDates = store.get('deepWorkHoursWithDates', {}) as DeepWorkHoursWithDates
   deepWorkHoursWithDates[today as keyof DeepWorkHoursWithDates] = {
     hours: totalHours,
-    date: todayDate
+    date: todayDate,
+    automaticHours: timeSpentInHours,
+    manualHours: todayManualHours
   }
   store.set('deepWorkHoursWithDates', deepWorkHoursWithDates)
 
